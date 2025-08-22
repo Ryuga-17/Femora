@@ -4,9 +4,7 @@
     "slug": "my-expo-app",
     "version": "1.0.0",
 
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
+    
 
     "experiments": {
       "tsconfigPaths": true
@@ -15,24 +13,39 @@
     "plugins": [],
 
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/mora.png",
 
     "userInterfaceStyle": "light",
 
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
+    
     "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.example.myexpoapp",
+      "config": {
+        "googleSignIn": {
+          "reservedClientId": "REPLACE_WITH_IOS_REVERSED_CLIENT_ID"
+        }
+      }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+      "package": "com.example.myexpoapp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": {
+            "scheme": "myexpoapp"
+          },
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+      
+    },
+    "scheme": "myexpoapp",
+    "extra": {
+      "expoClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
+      "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com"
     }
   }
 }
