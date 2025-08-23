@@ -29,8 +29,10 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [tempFiles, setTempFiles] = useState<string[]>([]);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
-  const [isGridActive, setIsGridActive] = useState(true);
+  const [isGridActive, setIsGridActive] = useState(false); // Start as static
   const [scanCompleted, setScanCompleted] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [mediaPermission, setMediaPermission] = useState(false);
@@ -38,6 +40,7 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
   const cameraRef = useRef<CameraView | null>(null);
   const scanAnimation = useRef(new Animated.Value(0)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -49,7 +52,8 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
 
   useEffect(() => {
     if (isScanning && !scanCompleted) {
-      // Start scanning animation
+      // Start scanning animation only when scanning begins
+      setIsGridActive(true);
       Animated.loop(
         Animated.sequence([
           Animated.timing(scanAnimation, {
@@ -64,63 +68,131 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
           }),
         ])
       ).start();
+
+      // Start progress animation
+      setScanProgress(0);
+      progressIntervalRef.current = setInterval(() => {
+        setScanProgress(prev => {
+          if (prev >= 100) {
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+            }
+            // Stop camera and animation when progress reaches 100%
+            stopCameraAndAnimation();
+            return 100;
+          }
+          return prev + 2;
+        });
+      }, 100);
     } else {
       // Stop animation when not scanning
+      setIsGridActive(false);
       scanAnimation.stopAnimation();
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
     }
   }, [isScanning, scanCompleted]);
 
-  const startScan = async () => {
-    if (!cameraRef.current) return;
-    
-    setIsScanning(true);
-    setCapturedImages([]);
-    setTempFiles([]);
-    setProcessingStatus(null);
-    setScanCompleted(false);
-
-    try {
-      let captureCount = 0;
-      const maxCaptures = 5; // Capture 5 images total
-      
-      // Capture multiple images over 10 seconds
-      intervalRef.current = setInterval(async () => {
-        // Stop if we've completed scan or reached max captures
-        if (scanCompleted || captureCount >= maxCaptures) {
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-          if (!scanCompleted) {
-            await completeScan();
-          }
-          return;
-        }
-
-        try {
-          const photo = await cameraRef.current?.takePictureAsync({
-            quality: 0.8,
-            base64: true,
-          });
-
-          if (photo?.base64) {
-            setCapturedImages(prev => [...prev, photo.base64!]);
-            captureCount++;
-            
-            // Process image using Python backend
-            await processImageWithPython(photo.base64);
-          }
-
-        } catch (error) {
-          console.error('Image capture error:', error);
-        }
-      }, 2000); // Capture every 2 seconds
-
-    } catch (error) {
-      console.error('Scan error:', error);
-      Alert.alert('Error', 'Failed to start scan');
-      setIsScanning(false);
+  const stopCameraAndAnimation = () => {
+    // Stop camera
+    if (cameraRef.current) {
+      setCameraReady(false);
     }
+    
+    // Stop scanning state
+    setIsScanning(false);
+    
+    // Stop animation
+    setIsGridActive(false);
+    scanAnimation.stopAnimation();
+    
+    // Clear intervals
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    
+    // Mark scan as completed
+    setScanCompleted(true);
+  };
+
+  const startScan = async () => {
+    // First request camera permission if not granted
+    if (!cameraPermission?.granted) {
+      const permissionResult = await requestCameraPermission();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Camera access is required for breast scanning');
+        return;
+      }
+    }
+    
+    // Initialize camera
+    setCameraReady(true);
+    
+    // Wait for camera to be ready
+    setTimeout(async () => {
+      if (!cameraRef.current) {
+        Alert.alert('Error', 'Camera failed to initialize');
+        return;
+      }
+      
+      setIsScanning(true);
+      setCapturedImages([]);
+      setTempFiles([]);
+      setProcessingStatus(null);
+      setScanCompleted(false);
+      setScanProgress(0);
+
+      try {
+        let captureCount = 0;
+        const maxCaptures = 5; // Capture 5 images total
+        
+        // Capture multiple images over 10 seconds
+        intervalRef.current = setInterval(async () => {
+          // Stop if we've completed scan or reached max captures
+          if (scanCompleted || captureCount >= maxCaptures) {
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+            if (!scanCompleted) {
+              await completeScan();
+            }
+            return;
+          }
+
+          try {
+            const photo = await cameraRef.current?.takePictureAsync({
+              quality: 0.8,
+              base64: true,
+              skipProcessing: true, // Skip processing to avoid click sound
+            });
+
+            if (photo?.base64) {
+              setCapturedImages(prev => [...prev, photo.base64!]);
+              captureCount++;
+              
+              // Process image using Python backend
+              await processImageWithPython(photo.base64);
+            }
+
+          } catch (error) {
+            console.error('Image capture error:', error);
+          }
+        }, 2000); // Capture every 2 seconds
+
+      } catch (error) {
+        console.error('Scan error:', error);
+        Alert.alert('Error', 'Failed to start scan');
+        setIsScanning(false);
+      }
+    }, 1000); // Wait 1 second for camera to initialize
   };
 
   const processImageWithPython = async (base64Image: string) => {
@@ -179,11 +251,16 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
     if (scanCompleted) return; // Prevent multiple completions
     
     setScanCompleted(true);
+    setScanProgress(100);
     
     // Clear any remaining intervals
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
     }
 
     try {
@@ -238,10 +315,17 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
     
     setIsScanning(false);
     setScanCompleted(false);
     setProcessingStatus(null);
+    setScanProgress(0);
+    setCameraReady(false);
+    setIsGridActive(false);
   };
 
   // Cleanup on unmount
@@ -249,6 +333,9 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
       }
     };
   }, []);
@@ -264,42 +351,21 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
     );
   }
 
-  if (!cameraPermission.granted) {
-    return (
-      <SafeAreaView className="flex-1 bg-purple-50">
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-        <View className="flex-1 items-center justify-center p-6">
-          <Text className="text-lg text-purple-800 text-center mb-4">
-            Camera access is required for breast scanning
-          </Text>
-          <TouchableOpacity
-            className="bg-purple-600 px-6 py-3 rounded-full"
-            style={{ backgroundColor: '#9992e1' }}
-            onPress={requestCameraPermission}>
-            <Text className="text-white font-semibold">Grant Permission</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="bg-gray-400 px-6 py-3 rounded-full mt-3"
-            onPress={() => onNavigateToHome()}>
-            <Text className="text-white font-semibold">Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView className="flex-1 bg-purple-50">
       <StatusBar barStyle="light-content" backgroundColor="#9992e1" />
       
-      {/* Hidden Camera */}
-      <View style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>
-        <CameraView
-          ref={cameraRef}
-          facing="front"
-          style={{ width: 1, height: 1 }}
-        />
-      </View>
+      {/* Hidden Camera - only starts when cameraReady is true */}
+      {cameraReady && (
+        <View style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>
+          <CameraView
+            ref={cameraRef}
+            facing="front"
+            style={{ width: 1, height: 1 }}
+            onCameraReady={() => setCameraReady(true)}
+          />
+        </View>
+      )}
 
       <Navbar title="Breast Scan" onBack={onNavigateToHome} />
 
@@ -310,8 +376,8 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
           <AnimatedGridOverlay isActive={isGridActive} />
         </View>
         
-        {/* Content Container - centered in remaining space */}
-        <View className="flex-1 items-center justify-center px-6 fixed z-10">
+        {/* Content Container - positioned below the animation */}
+        <View className="flex-1 justify-end pb-20 px-6 z-10">
           {/* Scanning Instructions */}
           <View className="items-center mb-8">
             <Text className="text-xl font-semibold text-purple-800 text-center mb-4">
@@ -329,9 +395,24 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
             </Text>
           </View>
 
+          {/* Progress Indicator */}
+          {isScanning && !scanCompleted && (
+            <View className="w-full max-w-xs mb-6 self-center">
+              <View className="w-full bg-gray-200 rounded-full h-3 mb-2">
+                <View 
+                  className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${scanProgress}%` }}
+                />
+              </View>
+              <Text className="text-sm text-center text-purple-700">
+                Scan Progress: {scanProgress}%
+              </Text>
+            </View>
+          )}
+
           {/* Processing Status */}
           {processingStatus && (
-            <View className="w-full max-w-xs mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <View className="w-full max-w-xs mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200 self-center">
               <Text className="text-sm text-blue-800 text-center">
                 🔄 {processingStatus.status === 'processing' ? 'Processing with AI...' : 
                      processingStatus.status === 'completed' ? 'AI Analysis Complete!' : 
@@ -340,20 +421,22 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
             </View>
           )}
 
-          {/* Action Buttons */}
-          <View className="w-full max-w-xs gap-5 top-20">
+          {/* Action Buttons - properly aligned */}
+          <View className="w-full max-w-xs gap-5 self-center">
             {!isScanning && !scanCompleted ? (
               <TouchableOpacity
-                className="py-4 rounded-full "
+                className="py-2 rounded-full border-2 border-black"
                 style={{ backgroundColor: '#9992e1' }}
                 onPress={startScan}>
-                <Text className="text-white text-center text-lg font-semibold">
+                <Text className="text-white text-center text-lg ">
                   Start Scan
                 </Text>
               </TouchableOpacity>
-            ) : isScanning && !scanCompleted ? (
+            ) : null}
+
+            {isScanning && !scanCompleted ? (
               <TouchableOpacity
-                className="bg-red-500 py-4 rounded-full"
+                className="bg-purple-300 py-2 rounded-full border-1 border-black"
                 onPress={stopScan}>
                 <Text className="text-white text-center text-lg font-semibold">
                   Stop Scan
@@ -363,7 +446,7 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
        
             {!scanCompleted && (
               <TouchableOpacity
-                className="py-3 rounded-full border"
+                className="py-3 rounded-full border-2 border-black"
                 style={{ 
                   backgroundColor: 'rgba(153, 146, 225, 0.2)', 
                   borderColor: '#9992e1' 
@@ -377,7 +460,7 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
           </View>
 
           {/* Security Notice */}
-          <View className="absolute bottom-8 left-6 right-6">
+          <View className="mt-6">
             <Text className="text-xs text-center" style={{ color: '#9992e1' }}>
               🔒 Your privacy is protected. Images are encrypted and securely processed with Python AI backend.
             </Text>

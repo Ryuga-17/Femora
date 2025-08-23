@@ -10,6 +10,7 @@ import UserProfile from './components/UserProfile';
 import Onboarding from './components/Onboarding';
 import BreastScan from './components/BreastScan';
 import Login from './components/Login';
+import LoadingPage from './components/LoadingPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function AppContent() {
@@ -17,6 +18,7 @@ function AppContent() {
     'home' | 'askMora' | 'questionnaire' | 'viewHistory' | 'userProfile' | 'onboarding' | 'breastScan' | 'scanReport'
   >('home');
   const [scanId, setScanId] = useState<string>('');
+  const [showLoading, setShowLoading] = useState(true);
   const { user, loading } = useAuth();
 
   useEffect(() => {
@@ -25,6 +27,18 @@ function AppContent() {
       NavigationBar.setButtonStyleAsync('light').catch(() => {});
     }
   }, []);
+
+  // Add delay to loading screen to make it visible longer
+  useEffect(() => {
+    if (!loading) {
+      // Add extra delay after authentication is complete
+      const timer = setTimeout(() => {
+        setShowLoading(false);
+      }, 2000); // Show loading for 2 seconds after auth is complete
+      
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
 
   const handleNavigateToAskMora = () => {
     setCurrentScreen('askMora');
@@ -64,15 +78,9 @@ function AppContent() {
     setCurrentScreen('scanReport');
   };
 
-  // Show loading screen while checking authentication
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-gradient-to-br from-pink-50 to-white">
-        <View className="text-center">
-          <Text className="mb-2 text-2xl font-bold text-[#E7B8FF]">Loading...</Text>
-        </View>
-      </View>
-    );
+  // Show loading screen while checking authentication or during the delay
+  if (loading || showLoading) {
+    return <LoadingPage message="Loading..." />;
   }
 
   // Show login screen if user is not authenticated
