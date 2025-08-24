@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   StatusBar,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import UserService, { ScanSession, OnboardingData } from '../services/userService';
 
 interface ViewHistoryProps {
   onNavigateToHome: () => void;
@@ -17,15 +19,40 @@ interface ViewHistoryProps {
 
 const ViewHistory: React.FC<ViewHistoryProps> = ({ onNavigateToHome, onNavigateToUserProfile }) => {
   const { user } = useAuth();
+  const [scans, setScans] = useState<ScanSession[]>([]);
+  const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for reports - replace with actual data from Firebase
-  const reports = [
-    { id: 1, date: '25-11-2025', type: 'Report' },
-    { id: 2, date: '20-11-2025', type: 'Report' },
-    { id: 3, date: '15-11-2025', type: 'Report' },
-    { id: 4, date: '10-11-2025', type: 'Report' },
-    { id: 5, date: '05-11-2025', type: 'Report' },
-  ];
+  useEffect(() => {
+    if (user) {
+      loadUserData();
+    }
+  }, [user]);
+
+  const loadUserData = async () => {
+    try {
+      setLoading(true);
+      const [scanData, onboarding] = await Promise.all([
+        UserService.getScanSessions(user!.uid),
+        UserService.getOnboardingData(user!.uid),
+      ]);
+      
+      setScans(scanData);
+      setOnboardingData(onboarding);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   const interpolateColor = (start: string, end: string, factor: number) => {
   const hexToRgb = (hex: string) => {
@@ -75,28 +102,58 @@ const ViewHistory: React.FC<ViewHistoryProps> = ({ onNavigateToHome, onNavigateT
           <Text className="text-lg font-semibold text-[#EB9DED]">
             {user?.email?.split('@')[0] || 'User'}
           </Text>
-          <Text className="text-sm text-black">Age - 20 yrs</Text>
+          <Text className="text-sm text-black">
+            Age - {onboardingData?.age || 'N/A'} yrs
+          </Text>
         </View>
       </View>
 
       {/* Reports List */}
       <ScrollView className="flex-1 px-5 py-4" showsVerticalScrollIndicator={false}>
-        <View className="space-y-3">
-          {reports.map((report) => (
-            <TouchableOpacity
-              key={report.id}
-              className="rounded-2xl border border-[#000] bg-[#E7B8FF] px-4 py-3 mb-4"
-              onPress={() => {
-                // TODO: Navigate to detailed report view
-                console.log('View report:', report.id);
-              }}>
-              <View className="flex-row items-center justify-between">
-                <Text className="text-base font-medium text-black">{report.date}</Text>
-                <Text className="text-base font-medium text-black">{report.type}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {loading ? (
+          <View className="flex-1 items-center justify-center py-8">
+            <ActivityIndicator size="large" color="#EB9DED" />
+            <Text className="mt-4 text-gray-600">Loading your scan history...</Text>
+          </View>
+        ) : scans.length === 0 ? (
+          <View className="flex-1 items-center justify-center py-8">
+            <Text className="text-lg text-gray-600 text-center mb-2">No scans yet</Text>
+            <Text className="text-sm text-gray-500 text-center">
+              Complete your first breast scan to see results here
+            </Text>
+          </View>
+        ) : (
+          <View className="space-y-3">
+            {scans.map((scan) => (
+              <TouchableOpacity
+                key={scan.id}
+                className="rounded-2xl border border-[#000] bg-[#E7B8FF] px-4 py-3 mb-4"
+                onPress={() => {
+                  // TODO: Navigate to detailed report view
+                  console.log('View scan:', scan.id);
+                }}>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-base font-medium text-black">
+                    {formatDate(scan.scanTime)}
+                  </Text>
+                  <Text className="text-base font-medium text-black">
+                    {scan.scanType === 'breast-scan' ? 'Breast Scan' : scan.scanType}
+                  </Text>
+                </View>
+                <View className="mt-2">
+                  <Text className="text-sm text-gray-600">
+                    Status: {scan.status}
+                  </Text>
+                  {scan.analysisResults && (
+                    <Text className="text-sm text-gray-600">
+                      Risk Level: {scan.analysisResults.riskLevel}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       {/* Bottom Navigation */}

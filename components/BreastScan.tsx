@@ -13,8 +13,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImageManipulator from 'expo-image-manipulator';
 import Navbar from './Navbar';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../config/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import UserService, { ScanSession, ScanAnalysis } from '../services/userService';
 import SecureImageService, { ProcessingStatus } from '../services/secureImageService';
 import AnimatedGridOverlay from './AnimatedGridOverlay';
 
@@ -270,22 +269,40 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Use Python backend results if available, otherwise use local results
-      const analysisResults = processingStatus?.result || {
+      const baseResult = processingStatus?.result || {
         findings: 'Analysis completed - comprehensive breast scan performed successfully',
         confidence: 85,
         riskLevel: 'Low',
         recommendation: 'Continue regular screening schedule. Consult healthcare provider if you have concerns.',
       };
+      
+      const analysisResults: ScanAnalysis = {
+        ...baseResult,
+        analysisId: baseResult.analysisId || `analysis_${Date.now()}`,
+        timestamp: baseResult.timestamp || new Date(),
+        riskLevel: baseResult.riskLevel as 'Low' | 'Low-Medium' | 'Medium' | 'Medium-High' | 'High',
+      };
 
-      // Save scan session to Firestore
-      const scanRef = await addDoc(collection(db, 'users', user.uid, 'scans'), {
-        images: capturedImages.length,
-        scanTime: serverTimestamp(),
-        status: 'completed',
+      // Create scan session data
+      const scanData: Partial<ScanSession> = {
+        scanType: 'breast-scan',
+        images: capturedImages,
         analysisResults,
-        processingStatus: processingStatus?.status || 'completed',
         backendUsed: processingStatus ? 'python' : 'local',
         gcsUrls: [], // In production, store actual GCS URLs from Python backend
+        metadata: {
+          captureCount: capturedImages.length,
+          processingTime: Date.now(),
+        },
+      };
+
+      // Save scan session using UserService
+      const scanId = await UserService.createScanSession(user.uid, scanData);
+      
+      // Update scan session status to completed
+      await UserService.updateScanSession(user.uid, scanId, {
+        status: 'completed',
+        scanTime: new Date(),
       });
 
       setIsScanning(false);
@@ -298,7 +315,7 @@ const BreastScan: React.FC<BreastScanProps> = ({ onNavigateToHome, onNavigateToR
       
       // Navigate to report after a brief delay
       setTimeout(() => {
-        onNavigateToReport(scanRef.id);
+        onNavigateToReport(scanId);
       }, 500);
       
     } catch (error) {

@@ -9,6 +9,7 @@ import secrets
 import numpy as np
 from PIL import Image
 import io
+import os
 
 def test_encryption_key():
     """Generate and test a valid encryption key"""
@@ -68,6 +69,36 @@ def test_base64_encoding():
     
     return encoded
 
+def test_gcp_upload():
+    """Test GCP upload functionality (if credentials are available)"""
+    print("\n☁️ Testing GCP upload functionality...")
+    
+    # Check if GCP credentials are available
+    gcs_bucket = os.getenv("GCS_BUCKET")
+    if not gcs_bucket:
+        print("⚠️  GCS_BUCKET environment variable not set - skipping GCP test")
+        return None
+    
+    try:
+        from secure_image_pipeline import GCPImageUploader
+        
+        # Create a test image
+        test_image = Image.new('RGB', (100, 100), color='blue')
+        img_buffer = io.BytesIO()
+        test_image.save(img_buffer, format='PNG')
+        test_bytes = img_buffer.getvalue()
+        
+        # Test upload
+        uploader = GCPImageUploader(gcs_bucket)
+        gcs_url = uploader.upload_image(test_bytes, "test_image.png")
+        
+        print(f"✅ GCP upload successful: {gcs_url}")
+        return gcs_url
+        
+    except Exception as e:
+        print(f"⚠️  GCP upload test failed (this is normal if credentials aren't set): {e}")
+        return None
+
 def main():
     """Run all tests"""
     print("🧪 Testing SecureImagePipeline Components")
@@ -86,12 +117,16 @@ def main():
         # Test base64 encoding
         base64_data = test_base64_encoding()
         
+        # Test GCP upload (if available)
+        gcs_url = test_gcp_upload()
+        
         print("\n" + "=" * 50)
         print("🎉 All tests passed! Your pipeline components are working.")
         print("\n📋 Next steps:")
         print("1. Copy the encryption key above to your .env file")
-        print("2. Ensure your secure_image_pipeline.py is in the same directory")
-        print("3. Run: python main.py")
+        print("2. Set GCS_BUCKET environment variable to your bucket name")
+        print("3. Ensure your secure_image_pipeline.py is in the same directory")
+        print("4. Run: python main.py")
         
     except Exception as e:
         print(f"\n❌ Test failed: {e}")

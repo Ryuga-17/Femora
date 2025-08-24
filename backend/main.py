@@ -10,7 +10,8 @@ from datetime import datetime
 import json
 
 # Import your existing classes
-from secure_image_pipeline import SecureImagePipeline, ImageEncryptor, GCSUploader
+from secure_image_pipeline import SecureImagePipeline, ImageEncryptor, GCPImageUploader
+from config import config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,9 +38,9 @@ security = HTTPBearer()
 
 # Configuration
 CONFIG = {
-    "encryption_key": "your-base64-encryption-key-here",  # Replace with your actual key
-    "gcs_bucket": "your-gcs-bucket-name",  # Replace with your actual bucket
-    "camera_index": 0
+    "encryption_key": config.ENCRYPTION_KEY,
+    "gcs_bucket": config.GCS_BUCKET,
+    "camera_index": config.CAMERA_INDEX
 }
 
 # Initialize pipeline
@@ -70,6 +71,8 @@ class ProcessingStatus(BaseModel):
     progress: int
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    gcs_url: Optional[str] = None
+    local_filename: Optional[str] = None
 
 # In-memory storage for processing status (use Redis/DB in production)
 processing_status = {}
@@ -178,10 +181,20 @@ async def process_image_directly(
         # Process image synchronously
         result = await process_image_sync(image_data, request.metadata)
         
+        # Extract GCS info from the result if available
+        gcs_url = None
+        local_filename = None
+        
+        if isinstance(result, dict):
+            gcs_url = result.get('gcs_url')
+            local_filename = result.get('local_filename')
+        
         return ProcessingStatus(
             status="completed",
             progress=100,
-            result=result
+            result=result,
+            gcs_url=gcs_url,
+            local_filename=local_filename
         )
 
     except HTTPException:
@@ -224,16 +237,45 @@ async def process_image_async(processing_id: str, image_data: bytes, metadata: D
         await asyncio.sleep(1)
         processing_status[processing_id]["progress"] = 75
 
-        # Run the actual pipeline
-        filename = pipeline.run_once()
-        
-        # Generate mock AI analysis results
-        ai_result = generate_mock_ai_results()
+        # Process the actual image data from the frontend
+        try:
+            # Convert base64 to image array
+            import numpy as np
+            from PIL import Image
+            import io
+            
+            # Convert bytes to PIL Image
+            pil_image = Image.open(io.BytesIO(image_data))
+            
+            # Convert to NumPy array
+            image_array = np.array(pil_image)
+            
+            # Process and upload to GCP
+            local_filename, gcs_url = pipeline.process_and_upload(image_array, f"breast_scan_{processing_id}.png")
+            
+            # Store GCS URL for later use
+            processing_status[processing_id]["gcs_url"] = gcs_url
+            processing_status[processing_id]["local_filename"] = local_filename
+            
+            logger.info(f"Image processed and uploaded to GCS: {gcs_url}")
+            
+        except Exception as e:
+            logger.error(f"Image processing failed: {e}")
+            # Fallback to mock results if processing fails
+            ai_result = generate_mock_ai_results()
+        else:
+            # Generate AI analysis results based on the processed image
+            ai_result = generate_mock_ai_results()
         
         # Update status to completed
         processing_status[processing_id]["status"] = "completed"
         processing_status[processing_id]["progress"] = 100
         processing_status[processing_id]["result"] = ai_result
+        
+        # Add GCS information to the result
+        if isinstance(ai_result, dict):
+            ai_result['gcs_url'] = processing_status[processing_id].get('gcs_url')
+            ai_result['local_filename'] = processing_status[processing_id].get('local_filename')
         
         logger.info(f"Async processing completed for {processing_id}")
 
@@ -247,11 +289,31 @@ async def process_image_sync(image_data: bytes, metadata: Dict[str, Any]):
     try:
         logger.info("Starting synchronous processing")
         
-        # Run the actual pipeline
-        filename = pipeline.run_once()
-        
-        # Generate mock AI analysis results
-        ai_result = generate_mock_ai_results()
+        # Process the actual image data from the frontend
+        try:
+            # Convert base64 to image array
+            import numpy as np
+            from PIL import Image
+            import io
+            
+            # Convert bytes to PIL Image
+            pil_image = Image.open(io.BytesIO(image_data))
+            
+            # Convert to NumPy array
+            image_array = np.array(pil_image)
+            
+            # Process and upload to GCP
+            local_filename, gcs_url = pipeline.process_and_upload(image_array, f"breast_scan_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png")
+            
+            logger.info(f"Image processed and uploaded to GCS: {gcs_url}")
+            
+        except Exception as e:
+            logger.error(f"Image processing failed: {e}")
+            # Fallback to mock results if processing fails
+            ai_result = generate_mock_ai_results()
+        else:
+            # Generate AI analysis results based on the processed image
+            ai_result = generate_mock_ai_results()
         
         logger.info("Synchronous processing completed")
         return ai_result

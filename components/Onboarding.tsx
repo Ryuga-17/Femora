@@ -2,8 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, TextInput, Alert, Platform } from 'react-native';
 import Navbar from './Navbar';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../config/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import UserService, { OnboardingData } from '../services/userService';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -68,15 +67,24 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onBackToHome }) => 
         Alert.alert('Error', 'You must be signed in to save.');
         return;
       }
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(
-        userRef,
-        {
-          onboarding: { ...answers },
-          onboardingAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+
+      // Convert answers to proper OnboardingData format
+      const onboardingData: OnboardingData = {
+        age: parseInt(answers.age) || 0,
+        pastScan: answers.pastScan || 'No',
+        familyHistory: answers.familyHistory || 'No',
+        pastConditions: Array.isArray(answers.pastConditions) ? answers.pastConditions : [answers.pastConditions || 'No'],
+        periodStartAge: parseInt(answers.periodStartAge) || 0,
+        status: answers.status || 'None',
+        hormonalMeds: answers.hormonalMeds || 'No',
+        smokeAlcohol: answers.smokeAlcohol || 'No',
+        chronic: Array.isArray(answers.chronic) ? answers.chronic : [answers.chronic || 'None'],
+        completedAt: new Date(),
+      };
+
+      // Save using UserService
+      await UserService.saveOnboardingData(user.uid, onboardingData);
+      
       Alert.alert('Saved', 'Thanks! Your answers were saved.', [{ text: 'OK', onPress: onComplete }]);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to save onboarding');

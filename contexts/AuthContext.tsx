@@ -13,6 +13,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import * as Crypto from 'expo-crypto';
 
 WebBrowser.maybeCompleteAuthSession(); // 👈 required for Expo AuthSession
 
@@ -51,7 +52,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
+    console.log('🔐 [AuthContext] Setting up auth state listener...');
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      console.log('🔐 [AuthContext] Auth state changed:', firebaseUser ? 'User logged in' : 'User logged out');
       setUser(firebaseUser);
       setLoading(false);
     });
@@ -74,7 +77,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await signOut(auth);
+    try {
+      console.log('🔐 [AuthContext] Starting logout process...');
+      
+      // Clear any persisted auth state
+      await auth.signOut();
+      console.log('🔐 [AuthContext] Firebase signOut completed');
+      
+      // Force clear the user state immediately
+      setUser(null);
+      console.log('🔐 [AuthContext] User state cleared');
+      
+      // Clear any stored tokens or auth data
+      if (Platform.OS === 'web') {
+        // Clear localStorage/auth cookies on web
+        localStorage.removeItem('firebase:authUser:AIzaSyCgCULTXDJo43QuTKFGyZgg6aG9Aot9uQE:[DEFAULT]');
+        sessionStorage.clear();
+        
+        // Clear all Firebase-related items
+        Object.keys(localStorage).forEach(key => {
+          if (key.includes('firebase') || key.includes('auth')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+      
+      // Force a re-render by updating loading state
+      setLoading(true);
+      setTimeout(() => setLoading(false), 100);
+      
+      console.log('🔐 [AuthContext] Logout completed successfully');
+    } catch (error) {
+      console.error('❌ [AuthContext] Logout error:', error);
+      // Even if Firebase signOut fails, clear the local state
+      setUser(null);
+      throw error;
+    }
   };
 
   const signInWithGoogle = async () => {
@@ -88,26 +126,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error("Google OAuth client ID is not configured in app.json");
       }
 
-      // Create auth request (use OIDC implicit: id_token)
+      console.log('🔐 [AuthContext] Using client ID:', clientId);
+      console.log('🔐 [AuthContext] Platform:', Platform.OS);
+
+      // Generate PKCE code verifier - FIXED: Use proper random string instead of makeRedirectUri
+      const codeVerifier = Math.random().toString(36).substring(2, 128);
+      const codeChallenge = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        codeVerifier,
+        { encoding: Crypto.CryptoEncoding.BASE64 }
+      );
+
+      console.log('🔐 [AuthContext] Generated PKCE code verifier and challenge');
+
+      // Create auth request using OAuth 2.0 authorization code flow with PKCE
       const request = new AuthSession.AuthRequest({
         clientId,
         scopes: ["openid", "profile", "email"],
         redirectUri,
-        responseType: AuthSession.ResponseType.IdToken,
+        responseType: AuthSession.ResponseType.Code,
+        codeChallenge,
+        codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
         extraParams: {
-          nonce: Math.random().toString(36).slice(2),
           prompt: "consent",
         },
       });
 
-      await request.promptAsync(discovery).then(async (result) => {
-        if (result.type === "success" && result.authentication?.idToken) {
-          const credential = GoogleAuthProvider.credential(result.authentication.idToken);
+      console.log('🔐 [AuthContext] Auth request created, prompting user...');
+      const result = await request.promptAsync(discovery);
+      
+      if (result.type === "success" && result.params.code) {
+        console.log('🔐 [AuthContext] Authorization code received, exchanging for tokens...');
+        
+        // Exchange authorization code for tokens
+        const tokenResult = await AuthSession.exchangeCodeAsync(
+          {
+            clientId,
+            code: result.params.code,
+            redirectUri,
+            extraParams: {
+              code_verifier: codeVerifier, // Include codeVerifier in extraParams
+            },
+          },
+          discovery
+        );
+
+        console.log('🔐 [AuthContext] Token exchange completed');
+
+        if (tokenResult.idToken) {
+          console.log('🔐 [AuthContext] ID token received, signing in with Firebase...');
+          const credential = GoogleAuthProvider.credential(tokenResult.idToken);
           await signInWithCredential(auth, credential);
+          console.log('🔐 [AuthContext] Firebase sign-in completed successfully');
         } else {
-          throw new Error("Google sign-in cancelled or failed");
+          throw new Error("Failed to get ID token from Google");
         }
-      });
+      } else {
+        throw new Error("Google sign-in cancelled or failed");
+      }
     } catch (err) {
       console.error("Google sign-in error:", err);
       throw err as Error;

@@ -29,6 +29,8 @@ export interface ProcessingStatus {
     confidence: number;
     riskLevel: string;
     recommendation: string;
+    analysisId?: string;
+    timestamp?: Date;
   };
   error?: string;
 }

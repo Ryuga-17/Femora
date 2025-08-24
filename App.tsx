@@ -1,6 +1,6 @@
 import './global.css';
 import React, { useEffect, useState } from 'react';
-import { View, Text, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import HomePage from './components/HomePage';
 import AskMora from './components/AskMora';
@@ -9,6 +9,7 @@ import ViewHistory from './components/ViewHistory';
 import UserProfile from './components/UserProfile';
 import Onboarding from './components/Onboarding';
 import BreastScan from './components/BreastScan';
+import ScanReport from './components/ScanReport';
 import Login from './components/Login';
 import LoadingPage from './components/LoadingPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -61,8 +62,11 @@ function AppContent() {
   };
 
   const handleLogout = () => {
+    console.log('🔄 [App] Logout requested, resetting to home screen');
     // Reset to home screen - the AuthContext will handle showing login
     setCurrentScreen('home');
+    // Clear any scan data
+    setScanId('');
   };
 
   const handleShowOnboarding = () => {
@@ -118,7 +122,13 @@ function AppContent() {
           onNavigateToReport={handleNavigateToReport} 
         />
       )}
-      
+      {currentScreen === 'scanReport' && (
+        <ScanReport 
+          scanId={scanId} 
+          onNavigateToHome={handleNavigateToHome} 
+          onNavigateToUserProfile={handleNavigateToUserProfile}
+        />
+      )}
     </>
   );
 }

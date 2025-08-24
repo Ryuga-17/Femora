@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "my-expo-app",
+    "name": "Femora",
     "slug": "my-expo-app",
     "version": "1.0.0",
 
@@ -21,15 +21,10 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.example.myexpoapp",
-      "config": {
-        "googleSignIn": {
-          "reservedClientId": "REPLACE_WITH_IOS_REVERSED_CLIENT_ID"
-        }
-      }
+      "bundleIdentifier": "com.example.myexpoapp"
     },
     "android": {
-      "package": "com.example.myexpoapp",
+      "package": "com.femora.myexpoapp",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -43,9 +38,9 @@
     },
     "scheme": "myexpoapp",
     "extra": {
-      "expoClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com",
-      "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
-      "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com"
+      "expoClientId": "896975254795-70mvmibdu8stdfnsc7uo11eoikrt1rll.apps.googleusercontent.com",
+      "iosClientId": "896975254795-70mvmibdu8stdfnsc7uo11eoikrt1rll.apps.googleusercontent.com",
+      "androidClientId": "896975254795-6k4799en22222ld01dbn8pbeimq2qils.apps.googleusercontent.com"
     }
   }
 }
