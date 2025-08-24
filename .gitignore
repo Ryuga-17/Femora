@@ -11,9 +11,59 @@ npm-debug.*
 *.orig.*
 web-build/
 
+# Firebase and Google Cloud
+firebase-debug.log
+*.firebase-adminsdk-*.json
+client_secret_*.json
+client_*.plist
 
+# Environment and configuration
+.env.local
+.env.development
+.env.production
+.env.test
 
+# Python virtual environment
+mora/sft/
+mora/chroma_db/
 
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
 
 ios
 android
